@@ -13,6 +13,7 @@ async function req(path: string, opts: RequestInit = {}) {
 
 export const api = {
   listClaims: () => req('/claims'),
+  getClaim: (claimId: string) => req(`/claims/${claimId}`),
   createClaim: (payload: object) =>
     req('/claims', { method: 'POST', body: JSON.stringify(payload) }),
   uploadDocument: (claimId: string, file: File) => {

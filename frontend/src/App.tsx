@@ -1,26 +1,32 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api } from '../api'
-import ClaimsQueue from './ClaimsQueue'
-import NewClaim from './NewClaim'
-import ReviewWorkspace from './ReviewWorkspace'
-import PolicyAdmin from './PolicyAdmin'
+import { NavLink, Routes, Route } from 'react-router-dom'
+import ClaimsQueue from './pages/ClaimsQueue'
+import NewClaim from './pages/NewClaim'
+import PolicyAdmin from './pages/PolicyAdmin'
+import ReviewWorkspace from './pages/ReviewWorkspace'
 
 export default function App() {
   return (
-    <div style={{ fontFamily: 'system-ui', maxWidth: 1100, margin: '0 auto', padding: 24 }}>
-      <header style={{ borderBottom: '2px solid #111', paddingBottom: 12, marginBottom: 24 }}>
-        <h1>ClaimSense AI</h1>
-        <p style={{ color: '#555' }}>AI assists → adjuster reviews → adjuster decides</p>
-        <nav style={{ display: 'flex', gap: 16 }}>
-          <Link to="/">Queue</Link>
-          <Link to="/new">New claim</Link>
-          <Link to="/policies">Policies</Link>
-        </nav>
+    <div className="app">
+      <header className="app-header">
+        <div className="container">
+          <div className="brand">
+            <h1>ClaimSense AI</h1>
+            <p>AI assists → adjuster reviews → adjuster decides</p>
+          </div>
+          <nav className="nav">
+            <NavLink to="/" end>Queue</NavLink>
+            <NavLink to="/new">New claim</NavLink>
+            <NavLink to="/policies">Policies</NavLink>
+          </nav>
+        </div>
       </header>
-      <main>
-        {/* Wire react-router Routes here in Step 10 of the guide */}
-        <ClaimsQueue />
+      <main className="container page">
+        <Routes>
+          <Route path="/" element={<ClaimsQueue />} />
+          <Route path="/new" element={<NewClaim />} />
+          <Route path="/policies" element={<PolicyAdmin />} />
+          <Route path="/claims/:claimId/review" element={<ReviewWorkspace />} />
+        </Routes>
       </main>
     </div>
   )
