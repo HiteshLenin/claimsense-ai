@@ -16,6 +16,7 @@ export const api = {
   getClaim: (claimId: string) => req(`/claims/${claimId}`),
   createClaim: (payload: object) =>
     req('/claims', { method: 'POST', body: JSON.stringify(payload) }),
+  listDocuments: (claimId: string) => req(`/claims/${claimId}/documents`),
   uploadDocument: (claimId: string, file: File) => {
     const form = new FormData()
     form.append('file', file)

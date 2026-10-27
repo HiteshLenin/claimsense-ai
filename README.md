@@ -1,80 +1,47 @@
-# ClaimSense AI — MVP Scaffold
+# ClaimSense AI
 
-AI-assisted insurance claims review for personal auto physical-damage claims.
-Backend: FastAPI · Frontend: React + TypeScript · DB: PostgreSQL + pgvector ·
-Storage: MinIO (S3-compatible) · LLM: Ollama (local, free)
+AI-assisted review for personal auto physical-damage claims. The AI triages and scores; a human adjuster reviews and makes every decision. The model never approves or denies a claim — it ranks the queue and flags what deserves a closer look, with a full audit trail of every analysis and decision.
 
-## Repo structure
+## What works today
 
-```
-claimsense-ai/
-├── backend/                 # FastAPI app (Python 3.12)
-│   ├── app/
-│   │   ├── main.py          # App entrypoint, router wiring
-│   │   ├── database.py      # SQLAlchemy engine + session
-│   │   ├── models.py        # DB tables (Claim, Document, ExtractedFact,
-│   │   │                    #   Analysis, PolicyChunk, Decision, AuditEvent)
-│   │   ├── schemas.py       # Pydantic request/response models
-│   │   ├── core/config.py   # Settings from environment variables
-│   │   ├── api/             # Route handlers: claims, documents, analyses, decisions
-│   │   └── services/        # Business logic:
-│   │                        #   extraction.py (PyMuPDF + Tesseract)
-│   │                        #   scoring.py    (severity / priority rules + ML)
-│   │                        #   risk.py       (fraud-risk signals + XGBoost)
-│   │                        #   rag.py        (embeddings + pgvector retrieval)
-│   │                        #   summarizer.py (Ollama LLM adapter -> Bedrock later)
-│   ├── tests/               # pytest
-│   └── Dockerfile
-├── frontend/                # React + TypeScript + Vite
-│   └── src/pages/           # ClaimsQueue, NewClaim, ReviewWorkspace,
-│                            # DecisionPanel, PolicyAdmin
-├── data/
-│   ├── raw/                 # Kaggle CSVs go here (git-ignored)
-│   ├── notebooks/           # Your EDA notebooks
-│   └── scripts/
-│       ├── download_kaggle.py   # Downloads the free Kaggle datasets
-│       ├── make_policy_pdfs.py  # Generates synthetic policy PDFs
-│       └── make_invoice_pdfs.py # Generates synthetic invoice PDFs
-├── infra/
-│   └── aws-ec2-setup.sh     # Installs Docker on a free-tier EC2 box
-├── scripts/
-│   └── demo_seed.py         # Seeds the 4 demo scenarios
-├── docker-compose.yml       # Runs EVERYTHING with one command
-└── .github/workflows/ci.yml # Free CI: tests + lint on every push
+- **Claims queue & review workspace** — React frontend over a FastAPI backend and PostgreSQL: claim facts, AI analysis, evidence, and the adjuster decision on one screen.
+- **ML fraud scoring** — a RandomForest trained on 15,420 historical claims (Kaggle `fraud_oracle`), one-hot encoded to 123 features. The decision threshold is set to **0.20, deliberately**: at the textbook 0.50 the model catches almost no fraud (recall 0.04). At 0.20 it catches ~74% of fraud and flags about 1 in 4 claims for human review (precision 0.17) — the right trade when a person makes the final call. The score is blended 50/50 with transparent rules (model version `rules-v0.1+rf-v1`).
+- **Rule-based severity & priority** — an ML severity model was trained and evaluated (accuracy 0.35) and **rejected**: the severity labels don't separate on the available features (the median Total Loss claim sits between Minor and Major), so a model's confident wrong answer would be worse than honest rules. The experiment is kept in `data/scripts/train_severity.py` as the record of that decision.
+- **Document evidence pipeline** — upload PDF/PNG/JPG up to 25MB per claim. Files are SHA-256 checksummed; an exact duplicate is refused (HTTP 409). Documents land in storage with extraction status `pending` and are listed on the claim's review page.
+- **Adjuster decision loop** — recording a decision in the UI flips the claim to `decided`, with rationale required. Analyses, uploads, and decisions all write audit events.
+
+## Stack
+
+- **Backend:** Python, FastAPI, SQLAlchemy
+- **Frontend:** React + TypeScript (Vite)
+- **Database:** PostgreSQL + pgvector (Docker)
+- **ML:** scikit-learn (RandomForest), joblib model bundle with the serving threshold and feature columns versioned together
+
+## Run it locally
+
+Order matters: database first, backend second, frontend last.
+
+```bat
+:: 1. Start Docker Desktop and wait for "Engine running", then:
+docker compose up -d db
+
+:: 2. Backend — run from the backend folder
+cd backend
+python -m uvicorn app.main:app --reload
+:: API docs: http://localhost:8000/docs
+
+:: 3. Frontend — run from the frontend folder, in a second terminal
+cd frontend
+npm run dev
+:: App: http://localhost:5173/
 ```
 
-## Quickstart (local, all free)
+Leave each server's terminal open — closing one stops that part of the stack.
 
-```bash
-# 1. Clone YOUR repo (paste the link your friend sent you)
-git clone <your-friends-repo-link>
-cd claimsense-ai
+## Training data
 
-# 2. Get the free datasets (~1 min)
-pip install kaggle fpdf2
-python data/scripts/download_kaggle.py
+Public Kaggle datasets: `shivamb/vehicle-claim-fraud-detection` (fraud model) and `buntyshah/auto-insurance-claims-data` (severity experiment). Raw data and trained model files are git-ignored; training scripts live in `data/scripts/`.
 
-# 3. Generate synthetic policy + invoice PDFs
-python data/scripts/make_policy_pdfs.py
-python data/scripts/make_invoice_pdfs.py
+## Roadmap
 
-# 4. Start everything
-docker compose up --build
-
-# 5. Open
-#    Frontend : http://localhost:5173
-#    API docs : http://localhost:8000/docs
-#    MinIO    : http://localhost:9001
-```
-
-## Build order (maps to the step-by-step guide)
-
-0. Tool installs → 1. This repo → 2. Kaggle data + EDA → 3. `docker compose up db`
-4. `backend/app/api/claims.py` → 5. `services/extraction.py` → 6. `services/scoring.py`
-7. `services/risk.py` → 8. `services/rag.py` → 9. `services/summarizer.py`
-10. `frontend/src/pages/*` → 11. `scripts/demo_seed.py` → 12. compose → 13. AWS → 14. CI/polish
-
-## Safety boundary (from the SDD)
-
-AI assists the adjuster; it never approves, denies, pays, or declares fraud.
-Every final decision requires a human adjuster + written rationale.
+Deploying to Azure: FastAPI on Azure Container Apps, PostgreSQL Flexible Server, documents in Azure Blob Storage, the React build on Azure Static Web Apps, and the LLM features — document extraction, claim summaries, content safety — on Microsoft Foundry. The scikit-learn fraud model ships inside the API container; Foundry covers the language-model parts.

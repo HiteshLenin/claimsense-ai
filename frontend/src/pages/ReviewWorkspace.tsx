@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
 import Badge from '../components/Badge'
 import DecisionPanel from './DecisionPanel'
+import EvidencePanel from './EvidencePanel'
+
 
 /** SDD screen: review workspace — claim facts, AI severity/priority,
  *  blended fraud risk with reasons, ML score, and the adjuster decision. */
@@ -88,6 +90,7 @@ export default function ReviewWorkspace() {
         )}
       </div>
       {claim && <DecisionPanel claimId={claim.id} claimVersion={claim.version} onDecided={refreshClaim} />}
+      <EvidencePanel />
     </section>
   )
 }
