@@ -113,24 +113,18 @@ def ml_fraud_score(kaggle_features: dict) -> dict | None:
 # can and fills the rest with training-typical values, so only things the
 # app actually knows can move the score.
 
-_CLAIM_CSV = (
-    Path(__file__).resolve().parents[3] / "data" / "raw" / "vehicle_fraud" / "fraud_oracle.csv"
-)
-
 
 @lru_cache(maxsize=1)
 def _typical_values():
-    """Median (numbers) / most common (categories) of each training column."""
-    df = pd.read_csv(_CLAIM_CSV)
-    typical = {}
-    for col in df.columns:
-        if col in ("FraudFound_P", "PolicyNumber"):
-            continue
-        if pd.api.types.is_numeric_dtype(df[col]):
-            typical[col] = float(df[col].median())
-        else:
-            typical[col] = df[col].mode().iloc[0]
-    return typical
+    """Median (numbers) / most common (categories) of each training column.
+
+    Baked into the bundle by data/scripts/bake_typical_values.py, so
+    serving never reads the raw training CSV.
+    """
+    bundle = _load_bundle()
+    if bundle is None:
+        return {}
+    return dict(bundle["typical_values"])
 
 
 def _set_mapped(features, columns, col, value, spellings):
