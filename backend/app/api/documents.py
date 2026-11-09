@@ -1,10 +1,14 @@
 """Document upload pipeline (SDD: POST /claims/{id}/documents).
 
-v1: validate, checksum, dedupe, store on local disk, save Document row.
-Extraction (text per page -> ExtractedFact rows) is the next step;
-Azure Blob Storage replaces local disk at Azure deploy time.
+v2: validate, checksum, dedupe, store the bytes, save Document row.
+Storage destination, chosen by environment:
+  - AZURE_STORAGE_CONNECTION_STRING set -> Azure Blob Storage
+    (container "claim-documents", blob "<claim_id>/<checksum><ext>")
+  - not set -> local disk, data/uploads/ (original v1 behaviour)
+Extraction (text per page -> ExtractedFact rows) arrives at Step 9a.
 """
 import hashlib
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -18,6 +22,29 @@ router = APIRouter(prefix="/claims", tags=["documents"])
 ALLOWED = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg"}
 MAX_BYTES = 25 * 1024 * 1024
 STORAGE = Path(__file__).resolve().parents[3] / "data" / "uploads"
+BLOB_CONTAINER = "claim-documents"
+
+
+def _store_bytes(claim_id, checksum, ext, data) -> str:
+    """Store the file bytes; return the key saved on the Document row.
+
+    Blob when a connection string is configured, local disk otherwise.
+    The blob name mirrors the local layout: <claim_id>/<checksum><ext>.
+    """
+    conn_str = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+    if conn_str:
+        # Imported here so local-only runs never need the Azure SDK.
+        from azure.storage.blob import BlobServiceClient
+
+        blob_name = f"{claim_id}/{checksum}{ext}"
+        client = BlobServiceClient.from_connection_string(conn_str)
+        client.get_blob_client(BLOB_CONTAINER, blob_name).upload_blob(data)
+        return blob_name
+    dest_dir = STORAGE / str(claim_id)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{checksum}{ext}"
+    dest.write_bytes(data)
+    return str(dest)
 
 
 @router.post("/{claim_id}/documents", status_code=201)
@@ -41,10 +68,7 @@ def upload_document(claim_id: str, file: UploadFile = File(...),
     if dup:
         raise HTTPException(409, "exact duplicate of an already-uploaded document")
 
-    dest_dir = STORAGE / str(claim.id)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"{checksum}{ALLOWED[file.content_type]}"
-    dest.write_bytes(data)
+    key = _store_bytes(claim.id, checksum, ALLOWED[file.content_type], data)
 
     doc = models.Document(
         claim_id=claim.id,
@@ -52,7 +76,7 @@ def upload_document(claim_id: str, file: UploadFile = File(...),
         doc_type="other",  # classified at extraction time
         size_bytes=len(data),
         checksum_sha256=checksum,
-        s3_key=str(dest),  # local path for now; Blob key at Azure deploy
+        s3_key=key,  # Blob name in Azure; local path when disk-backed
         extraction_status="pending",
     )
     db.add(doc)
